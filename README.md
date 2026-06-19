@@ -2,7 +2,7 @@
 
 A small Python script that downloads exported Discord favorite GIFs.
 
-## What it does
+## What does it do?
 
 * Reads the Discord favorites export JSON.
 * Downloads each GIF or video source.
@@ -50,4 +50,3 @@ After that you the gifs will automatically start downloading to the created `/gi
 
 * The script keeps the original order using the `order` field.
 * If a download fails, the script skips that entry and continues.
-* 
