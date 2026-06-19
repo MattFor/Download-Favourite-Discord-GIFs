@@ -1,0 +1,6 @@
+.idea
+.venv
+gifs
+
+# Download from your browser's discord.com
+discord-favorite-gifs.json
