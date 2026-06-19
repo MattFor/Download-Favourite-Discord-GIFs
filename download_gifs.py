@@ -98,7 +98,7 @@ def mp4_to_gif(mp4_path: Path, gif_path: Path) -> None:
 
 def main() -> int:
 	parser = argparse.ArgumentParser(
-		description="Download Discord GIF favorites into."
+		description="Download Discord GIF favorites into ./gifs"
 	)
 	parser.add_argument("json_file", help="Path to the JSON file with GIF data")
 	args = parser.parse_args()
@@ -118,6 +118,13 @@ def main() -> int:
 		print("Expected the JSON root to be an object/dict.", file=sys.stderr)
 		return 1
 
+	downloaded = 0
+	dead_links = 0
+	failed_other = 0
+	skipped_existing = 0
+	eligible_entries = 0
+	total_entries = len(data)
+
 	for i, (page_url, meta) in enumerate(data.items(), start=1):
 		if not isinstance(meta, dict):
 			print(f"Skipping item {i}: invalid metadata", file=sys.stderr)
@@ -131,24 +138,83 @@ def main() -> int:
 			print(f"Skipping item {i}: missing src", file=sys.stderr)
 			continue
 
+		eligible_entries += 1
+
 		ext = guess_ext(page_url, src, fmt)
 		base = f"{int(order):06d}_{safe_name(urlparse(page_url).path.split('/')[-1] or 'gif')}"
-		temp_path = out_dir / f"{base}{ext}"
 
-		try:
-			print(f"Downloading {i}/{len(data)}: {src}")
-			download_file(src, temp_path)
+		if ext == ".mp4":
+			final_path = out_dir / f"{base}.gif"
+			temp_path = out_dir / f"{base}.mp4"
 
-			if ext == ".mp4":
-				gif_path = out_dir / f"{base}.gif"
-				mp4_to_gif(temp_path, gif_path)
-				temp_path.unlink(missing_ok=True)
-				print(f"Saved: {gif_path.name}")
-			else:
-				print(f"Saved: {temp_path.name}")
+			if final_path.exists():
+				skipped_existing += 1
+				print(f"Skipping existing: {final_path.name}")
+				continue
 
-		except Exception as e:
-			print(f"Failed for {src}: {e}", file=sys.stderr)
+			try:
+				print(f"Downloading {i}/{total_entries}: {src}")
+				download_file(src, temp_path)
+				mp4_to_gif(temp_path, final_path)
+				downloaded += 1
+				print(f"Saved: {final_path.name}")
+			except requests.RequestException as e:
+				dead_links += 1
+				print(f"Dead link: {src} ({e})", file=sys.stderr)
+			except Exception as e:
+				failed_other += 1
+				print(f"Failed for {src}: {e}", file=sys.stderr)
+			finally:
+				if temp_path.exists():
+					temp_path.unlink(missing_ok=True)
+
+		else:
+			final_path = out_dir / f"{base}{ext}"
+
+			if final_path.exists():
+				skipped_existing += 1
+				print(f"Skipping existing: {final_path.name}")
+				continue
+
+			try:
+				print(f"Downloading {i}/{total_entries}: {src}")
+				download_file(src, final_path)
+				downloaded += 1
+				print(f"Saved: {final_path.name}")
+			except requests.RequestException as e:
+				dead_links += 1
+				print(f"Dead link: {src} ({e})", file=sys.stderr)
+			except Exception as e:
+				failed_other += 1
+				print(f"Failed for {src}: {e}", file=sys.stderr)
+
+	print("\nDone.")
+
+	consolidator = Path(__file__).parent / "extension_consolidator.py"
+
+	if consolidator.exists():
+		print("\nRunning consolidator...")
+		result = subprocess.run([sys.executable, str(consolidator)])
+
+		if result.returncode == 0:
+			print("Consolidation completed successfully.")
+		else:
+			print(
+				f"Consolidation exited with code {result.returncode}",
+				file=sys.stderr,
+			)
+	else:
+		print("extension_consolidator.py not found, skipping.")
+
+	dead_percentage = (dead_links / eligible_entries * 100) if eligible_entries else 0.0
+
+	print(f"Total entries:      {total_entries}")
+	print(f"Eligible links:     {eligible_entries}")
+	print(f"Downloaded:         {downloaded}")
+	print(f"Skipped existing:    {skipped_existing}")
+	print(f"Dead links:         {dead_links} ({dead_percentage:.3f}%)")
+	if failed_other:
+		print(f"Other failures:      {failed_other}")
 
 	return 0
 
